@@ -39,7 +39,6 @@ function Index() {
   const [uploaded, setUploaded] = useState<UploadedDocument | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("notes");
-  const [userName, setUserName] = useState("Student");
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -48,8 +47,7 @@ function Index() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [user, summaries] = await Promise.all([api.me(), api.listSummaries()]);
-      setUserName(user.first_name);
+      const [, summaries] = await Promise.all([api.me(), api.listSummaries()]);
       setDocs(summaries.map(toSummaryDoc));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Could not load your summaries");
@@ -128,17 +126,11 @@ function Index() {
         <div key="home" className="screen-enter flex flex-1 flex-col">
           <HomeScreen
             docs={docs}
-            mode={mode}
-            userName={userName}
             loading={loading}
             error={loadError}
             onRetry={loadLibrary}
             onOpenDoc={openDoc}
             onUpload={() => setScreen("upload")}
-            onSelectMode={(selected) => {
-              setMode(selected);
-              setScreen("upload");
-            }}
             onLibrary={() => setScreen("library")}
           />
           <BottomNav active="home" onNavigate={(next) => setScreen(next)} />
