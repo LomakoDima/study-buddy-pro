@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import secrets
 from contextlib import asynccontextmanager
 from urllib.parse import parse_qsl, urlencode
@@ -31,23 +32,52 @@ from .schemas import SummaryRequest, UserResponse
 from .services import SummaryService
 
 
-if settings.is_vercel and not settings.database_url:
-    raise RuntimeError(
-        "DATABASE_URL is required on Vercel. Connect a PostgreSQL database before deploying."
+logger = logging.getLogger(__name__)
+startup_issues: list[str] = []
+
+database: Database | None = None
+try:
+    if settings.is_vercel and not settings.database_url:
+        raise RuntimeError("No PostgreSQL connection variable was found")
+    database = Database(settings.database_path, settings.database_url)
+except Exception:
+    logger.exception("Database initialization failed")
+    startup_issues.append(
+        "Database initialization failed. Connect Neon/PostgreSQL and verify DATABASE_URL, "
+        "POSTGRES_URL or NEON_DATABASE_URL."
     )
 
-database = Database(settings.database_path, settings.database_url)
 summarizer = Summarizer(settings)
-service = SummaryService(database, summarizer)
-bot = Bot(settings.bot_token) if settings.bot_token else None
+service = SummaryService(database, summarizer) if database else None
+
+bot: Bot | None = None
+if settings.bot_token:
+    try:
+        bot = Bot(settings.bot_token)
+    except Exception:
+        logger.exception("Telegram bot initialization failed")
+        startup_issues.append(
+            "Telegram bot initialization failed. Verify TELEGRAM_BOT_TOKEN from BotFather."
+        )
+
 dispatcher = Dispatcher()
-dispatcher.include_router(create_router(service, settings))
+if service:
+    dispatcher.include_router(create_router(service, settings))
+
+
+def require_service() -> SummaryService:
+    if not service:
+        raise HTTPException(
+            status_code=503,
+            detail=startup_issues[0] if startup_issues else "Backend storage is unavailable",
+        )
+    return service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     polling_task: asyncio.Task | None = None
-    if bot and not settings.telegram_webhook_url and not settings.is_vercel:
+    if bot and service and not settings.telegram_webhook_url and not settings.is_vercel:
         polling_task = asyncio.create_task(
             dispatcher.start_polling(bot, handle_signals=False, close_bot_session=False)
         )
@@ -96,12 +126,13 @@ async def restore_vercel_api_path(request: Request, call_next):
 
 
 @app.get("/api/health")
-def health() -> dict[str, str | bool]:
+def health() -> dict[str, str | bool | list[str]]:
     return {
-        "status": "ok",
+        "status": "error" if startup_issues else "ok",
         "aiConfigured": summarizer.configured,
         "botConfigured": bot is not None,
-        "database": database.backend,
+        "database": database.backend if database else "unavailable",
+        "issues": startup_issues,
     }
 
 
@@ -155,7 +186,7 @@ async def setup_telegram_webhook(
 
 @app.get("/api/me", response_model=UserResponse)
 def me(user: AuthUser = Depends(current_user)) -> AuthUser:
-    service.ensure_user(user)
+    require_service().ensure_user(user)
     return user
 
 
@@ -171,13 +202,14 @@ async def upload_document(
             status_code=413, detail=f"The file is too large. The limit is {settings.max_file_mb} MB."
         )
     parsed = parse_document(filename, content)
-    return service.create_document(user, filename, len(content), parsed)
+    return require_service().create_document(user, filename, len(content), parsed)
 
 
 @app.get("/api/summaries")
 def list_summaries(user: AuthUser = Depends(current_user)) -> list[dict]:
-    service.ensure_user(user)
-    return service.list_summaries(user.id)
+    active_service = require_service()
+    active_service.ensure_user(user)
+    return active_service.list_summaries(user.id)
 
 
 @app.post("/api/documents/{document_id}/summaries", status_code=202)
@@ -192,17 +224,18 @@ def create_summary(
             status_code=503,
             detail="AI summarization is not configured. Set AI_API_KEY on the backend.",
         )
-    summary = service.create_summary(user, document_id, request.mode)
-    background_tasks.add_task(service.generate_summary, summary["id"])
+    active_service = require_service()
+    summary = active_service.create_summary(user, document_id, request.mode)
+    background_tasks.add_task(active_service.generate_summary, summary["id"])
     return summary
 
 
 @app.get("/api/summaries/{summary_id}")
 def get_summary(summary_id: str, user: AuthUser = Depends(current_user)) -> dict:
-    return service.get_summary(user.id, summary_id)
+    return require_service().get_summary(user.id, summary_id)
 
 
 @app.delete("/api/summaries/{summary_id}", status_code=204)
 def delete_summary(summary_id: str, user: AuthUser = Depends(current_user)) -> Response:
-    service.delete_summary(user.id, summary_id)
+    require_service().delete_summary(user.id, summary_id)
     return Response(status_code=204)

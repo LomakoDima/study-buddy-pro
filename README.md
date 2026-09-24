@@ -51,7 +51,9 @@ npm run dev
 - `POSTGRES_URL`;
 - `NEON_DATABASE_URL`.
 
-Без PostgreSQL production-функция намеренно не запускается: файловая система Vercel не подходит для постоянного SQLite-хранилища.
+Без PostgreSQL production-функция запускается только в диагностическом режиме: `/api/health`
+покажет `"database":"unavailable"`, а операции с библиотекой вернут `503`. Файловая
+система Vercel не подходит для постоянного SQLite-хранилища.
 
 ### 3. Environment Variables
 
@@ -94,6 +96,17 @@ https://ваш-домен/api/health
 ```
 
 Ожидаемый ответ содержит `"status":"ok"`, `"aiConfigured":true`, `"botConfigured":true` и `"database":"postgresql"`.
+
+Если вместо этого ответ содержит `"status":"error"`, прочитайте массив `issues`:
+
+- ошибка `Database initialization failed` означает, что к проекту не подключён Neon/PostgreSQL,
+  отсутствует строка подключения либо она добавлена не для Production;
+- ошибка `Telegram bot initialization failed` означает, что `TELEGRAM_BOT_TOKEN` имеет
+  неверный формат.
+
+После исправления переменных обязательно выполните **Deployments → Redeploy**. Если Vercel
+всё ещё показывает `FUNCTION_INVOCATION_FAILED` и JSON от `/api/health` не открывается,
+скопируйте первую трассировку из **Deployments → нужный deployment → Runtime Logs**.
 
 ### 5. Регистрация Telegram webhook
 
