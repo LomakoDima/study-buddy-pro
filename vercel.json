@@ -7,7 +7,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 300,
-      "excludeFiles": "{backend/tests/**,data/**,.pytest_cache/**,node_modules/**,dist/**,src/**,public/**,.output/**,.vercel/**,*.lock,package-lock.json}"
+      "excludeFiles": "{backend/tests/**,data/**,.pytest_cache/**,node_modules/**,dist/**,src/**,public/**,.output/**,.vercel/**,package-lock.json}"
     }
   },
   "rewrites": [
