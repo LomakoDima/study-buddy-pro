@@ -14,9 +14,19 @@ interface Props {
   onSelect: (m: Mode) => void;
   onBack: () => void;
   onGenerate: () => void;
+  error?: string | null;
+  generating?: boolean;
 }
 
-export function ModeScreen({ fileName, mode, onSelect, onBack, onGenerate }: Props) {
+export function ModeScreen({
+  fileName,
+  mode,
+  onSelect,
+  onBack,
+  onGenerate,
+  error,
+  generating = false,
+}: Props) {
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex-1 px-5 pb-8 pt-6">
@@ -59,14 +69,23 @@ export function ModeScreen({ fileName, mode, onSelect, onBack, onGenerate }: Pro
             );
           })}
         </div>
+        {error && (
+          <p
+            role="alert"
+            className="mt-4 rounded-xl bg-destructive/10 px-3 py-2 text-center text-xs font-semibold text-destructive"
+          >
+            {error}
+          </p>
+        )}
       </div>
 
       <div className="sticky bottom-0 bg-background/90 px-5 pb-6 pt-3 backdrop-blur-sm">
         <button
           onClick={onGenerate}
+          disabled={generating}
           className="w-full rounded-2xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 transition-all active:scale-[0.99]"
         >
-          Generate summary
+          {generating ? "Starting…" : "Generate summary"}
         </button>
       </div>
     </div>

@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { Bookmark, Check, ChevronLeft, Copy, Share2 } from "lucide-react";
+import { Check, ChevronLeft, Copy, Share2, Trash2 } from "lucide-react";
 import type { SummaryDoc } from "@/lib/summarize-data";
 import { ModeChip, SmallTypeBadge } from "./bits";
 
 interface Props {
   doc: SummaryDoc;
-  saved: boolean;
-  onToggleSave: () => void;
+  onDelete: () => Promise<void>;
   onBack: () => void;
 }
 
@@ -18,17 +17,40 @@ function SectionLabel({ children }: { children: string }) {
   );
 }
 
-export function SummaryScreen({ doc, saved, onToggleSave, onBack }: Props) {
-  const [copied, setCopied] = useState(false);
+function summaryText(doc: SummaryDoc): string {
+  const parts = [doc.title, "", ...doc.keyPoints.map((point) => `• ${point}`)];
+  for (const section of doc.sections) parts.push("", section.heading, section.text);
+  if (doc.qa?.length) for (const item of doc.qa) parts.push("", `Q: ${item.q}`, `A: ${item.a}`);
+  return parts.join("\n");
+}
 
+export function SummaryScreen({ doc, onDelete, onBack }: Props) {
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const copy = async () => {
     try {
-      const text = [doc.title, "", ...doc.keyPoints.map((k) => `• ${k}`)].join("\n");
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(summaryText(doc));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
-      /* clipboard unavailable — prototype only */
+      setError("Clipboard access is unavailable.");
+    }
+  };
+  const share = async () => {
+    try {
+      if (navigator.share) await navigator.share({ title: doc.title, text: summaryText(doc) });
+      else await copy();
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      setError("Sharing is unavailable on this device.");
+    }
+  };
+  const remove = async () => {
+    if (!window.confirm("Delete this summary? This cannot be undone.")) return;
+    try {
+      await onDelete();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not delete the summary");
     }
   };
 
@@ -41,7 +63,6 @@ export function SummaryScreen({ doc, saved, onToggleSave, onBack }: Props) {
         >
           <ChevronLeft className="size-4" /> Back
         </button>
-
         <div className="flex items-center gap-2.5">
           <SmallTypeBadge type={doc.type} />
           <div className="min-w-0 flex-1">
@@ -50,65 +71,73 @@ export function SummaryScreen({ doc, saved, onToggleSave, onBack }: Props) {
           </div>
           <ModeChip mode={doc.mode} />
         </div>
-
+        {error && (
+          <p
+            role="alert"
+            className="mt-4 rounded-xl bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive"
+          >
+            {error}
+          </p>
+        )}
         <div className="mt-6 space-y-6">
           {doc.keyPoints.length > 0 && (
             <div>
               <SectionLabel>Key points</SectionLabel>
               <ul className="mt-2.5 space-y-2">
-                {doc.keyPoints.map((p) => (
-                  <li key={p} className="flex gap-2.5 text-sm leading-relaxed text-foreground/80">
+                {doc.keyPoints.map((point, index) => (
+                  <li
+                    key={`${point}-${index}`}
+                    className="flex gap-2.5 text-sm leading-relaxed text-foreground/80"
+                  >
                     <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-sun ring-2 ring-sun/30" />
-                    {p}
+                    {point}
                   </li>
                 ))}
               </ul>
             </div>
           )}
-
           {doc.mode !== "quick" && doc.terms.length > 0 && (
             <div>
               <SectionLabel>Key terms</SectionLabel>
               <div className="mt-2.5 flex flex-wrap gap-2">
-                {doc.terms.map((t) => (
+                {doc.terms.map((term, index) => (
                   <span
-                    key={t}
+                    key={`${term}-${index}`}
                     className="rounded-full bg-card px-3 py-1 text-xs font-semibold text-foreground/70 shadow-sm ring-1 ring-border"
                   >
-                    {t}
+                    {term}
                   </span>
                 ))}
               </div>
             </div>
           )}
-
           {doc.mode === "exam" && doc.qa && doc.qa.length > 0 && (
             <div>
               <SectionLabel>Likely questions</SectionLabel>
               <div className="mt-2.5 space-y-2.5">
-                {doc.qa.map((qa) => (
-                  <div key={qa.q} className="rounded-2xl bg-card p-4 shadow-sm">
-                    <p className="text-sm font-bold">{qa.q}</p>
-                    <p className="mt-1.5 text-sm leading-relaxed text-foreground/65">{qa.a}</p>
+                {doc.qa.map((item, index) => (
+                  <div key={`${item.q}-${index}`} className="rounded-2xl bg-card p-4 shadow-sm">
+                    <p className="text-sm font-bold">{item.q}</p>
+                    <p className="mt-1.5 text-sm leading-relaxed text-foreground/65">{item.a}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
-          {doc.sections.map((s) => (
-            <div key={s.heading}>
-              <SectionLabel>{s.heading}</SectionLabel>
-              <p className="mt-2 text-sm leading-relaxed text-foreground/80">{s.text}</p>
+          {doc.sections.map((section, index) => (
+            <div key={`${section.heading}-${index}`}>
+              <SectionLabel>{section.heading}</SectionLabel>
+              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-foreground/80">
+                {section.text}
+              </p>
             </div>
           ))}
         </div>
       </div>
-
       <div className="sticky bottom-0 z-20 border-t border-border bg-card/95 px-5 pb-5 pt-3 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <button
-            onClick={copy}
+            onClick={() => void copy()}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-background py-2.5 text-sm font-semibold text-foreground/80 ring-1 ring-border transition-transform active:scale-[0.98]"
           >
             {copied ? (
@@ -118,19 +147,17 @@ export function SummaryScreen({ doc, saved, onToggleSave, onBack }: Props) {
             )}
             {copied ? "Copied" : "Copy"}
           </button>
-          <button className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-background py-2.5 text-sm font-semibold text-foreground/80 ring-1 ring-border transition-transform active:scale-[0.98]">
+          <button
+            onClick={() => void share()}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-background py-2.5 text-sm font-semibold text-foreground/80 ring-1 ring-border transition-transform active:scale-[0.98]"
+          >
             <Share2 className="size-4" /> Share
           </button>
           <button
-            onClick={onToggleSave}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold transition-all active:scale-[0.98] ${
-              saved
-                ? "bg-sun text-foreground"
-                : "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-            }`}
+            onClick={() => void remove()}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-destructive py-2.5 text-sm font-bold text-destructive-foreground transition-all active:scale-[0.98]"
           >
-            <Bookmark className="size-4" fill={saved ? "currentColor" : "none"} />
-            {saved ? "Saved" : "Save"}
+            <Trash2 className="size-4" /> Delete
           </button>
         </div>
       </div>

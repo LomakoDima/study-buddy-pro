@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { api } from "@/lib/api";
+import { initializeTelegramMiniApp } from "@/lib/telegram";
 import {
-  MOCK_DOCS,
-  NEW_DOC,
+  toSummaryDoc,
   type Mode,
   type SummaryDoc,
+  type UploadedDocument,
 } from "@/lib/summarize-data";
 import { BottomNav } from "@/components/summarize/BottomNav";
 import { HomeScreen } from "@/components/summarize/HomeScreen";
@@ -22,61 +24,102 @@ export const Route = createFileRoute("/")({
       { title: "Summarize — Study notes from your lectures" },
       {
         name: "description",
-        content:
-          "Turn lecture PDFs, DOCX and PPTX files into short, structured study notes with Quick, Study Notes and Exam Prep modes.",
+        content: "Turn lecture PDFs, DOCX and PPTX files into short, structured study notes.",
       },
-      { property: "og:title", content: "Summarize — Study notes from your lectures" },
-      {
-        property: "og:description",
-        content:
-          "Upload a lecture file and get short, structured study notes. Quick, Study Notes or Exam Prep.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Index,
 });
 
-const UPLOADED_FILE = "BIO201_Lecture_07.pdf";
-
 function Index() {
   const [screen, setScreen] = useState<Screen>("home");
   const [returnTo, setReturnTo] = useState<Screen>("home");
-  const [docs, setDocs] = useState<SummaryDoc[]>(MOCK_DOCS);
+  const [docs, setDocs] = useState<SummaryDoc[]>([]);
   const [activeDoc, setActiveDoc] = useState<SummaryDoc | null>(null);
+  const [uploaded, setUploaded] = useState<UploadedDocument | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("notes");
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [userName, setUserName] = useState("Student");
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadLibrary = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [user, summaries] = await Promise.all([api.me(), api.listSummaries()]);
+      setUserName(user.first_name);
+      setDocs(summaries.map(toSummaryDoc));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Could not load your summaries");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const initialize = async () => {
+      try {
+        await initializeTelegramMiniApp();
+        if (!cancelled) await loadLibrary();
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : "Could not initialize the app");
+          setLoading(false);
+        }
+      }
+    };
+
+    void initialize();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadLibrary]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [screen]);
 
-  const openDoc = (d: SummaryDoc) => {
-    setActiveDoc(d);
+  const openDoc = (doc: SummaryDoc) => {
+    if (doc.status) return;
+    setActiveDoc(doc);
     setReturnTo(screen === "library" ? "library" : "home");
     setScreen("summary");
   };
 
-  const generate = () => {
-    const doc: SummaryDoc = { ...NEW_DOC, id: `doc-${Date.now()}`, mode };
-    setDocs((prev) => [doc, ...prev]);
-    setActiveDoc(doc);
-    setReturnTo("home");
-    setScreen("processing");
+  const generate = async () => {
+    if (!uploaded) return;
+    setLoadError(null);
+    setGenerating(true);
+    try {
+      const created = await api.createSummary(uploaded.id, mode);
+      const doc = toSummaryDoc(created);
+      setDocs((previous) => [doc, ...previous]);
+      setProcessingId(created.id);
+      setScreen("processing");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Could not start the summary");
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  const toggleSave = () => {
+  const finishProcessing = (doc: SummaryDoc) => {
+    setDocs((previous) => previous.map((item) => (item.id === doc.id ? doc : item)));
+    setActiveDoc(doc);
+    setReturnTo("home");
+    setScreen("summary");
+  };
+
+  const deleteActive = async () => {
     if (!activeDoc) return;
-    setSavedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(activeDoc.id)) {
-        next.delete(activeDoc.id);
-      } else {
-        next.add(activeDoc.id);
-      }
-      return next;
-    });
+    await api.deleteSummary(activeDoc.id);
+    setDocs((previous) => previous.filter((item) => item.id !== activeDoc.id));
+    setActiveDoc(null);
+    setScreen(returnTo === "summary" ? "home" : returnTo);
   };
 
   return (
@@ -86,59 +129,71 @@ function Index() {
           <HomeScreen
             docs={docs}
             mode={mode}
+            userName={userName}
+            loading={loading}
+            error={loadError}
+            onRetry={loadLibrary}
             onOpenDoc={openDoc}
             onUpload={() => setScreen("upload")}
-            onSelectMode={(m) => {
-              setMode(m);
+            onSelectMode={(selected) => {
+              setMode(selected);
               setScreen("upload");
             }}
             onLibrary={() => setScreen("library")}
           />
-          <BottomNav active="home" onNavigate={(s) => setScreen(s)} />
+          <BottomNav active="home" onNavigate={(next) => setScreen(next)} />
         </div>
       )}
-
       {screen === "library" && (
         <div key="library" className="screen-enter flex flex-1 flex-col">
-          <LibraryScreen docs={docs} onOpenDoc={openDoc} />
-          <BottomNav active="library" onNavigate={(s) => setScreen(s)} />
+          <LibraryScreen docs={docs} loading={loading} onOpenDoc={openDoc} />
+          <BottomNav active="library" onNavigate={(next) => setScreen(next)} />
         </div>
       )}
-
       {screen === "upload" && (
         <div key="upload" className="screen-enter flex flex-1 flex-col">
-          <UploadScreen onBack={() => setScreen("home")} onContinue={() => setScreen("mode")} />
+          <UploadScreen
+            onBack={() => setScreen("home")}
+            onUpload={async (file, onProgress) => {
+              const result = await api.uploadDocument(file, onProgress);
+              setUploaded(result);
+            }}
+            onContinue={() => setScreen("mode")}
+          />
         </div>
       )}
-
-      {screen === "mode" && (
+      {screen === "mode" && uploaded && (
         <div key="mode" className="screen-enter flex flex-1 flex-col">
           <ModeScreen
-            fileName={UPLOADED_FILE}
+            fileName={uploaded.filename}
             mode={mode}
             onSelect={setMode}
             onBack={() => setScreen("upload")}
-            onGenerate={generate}
+            onGenerate={() => void generate()}
+            error={loadError}
+            generating={generating}
           />
         </div>
       )}
-
-      {screen === "processing" && (
+      {screen === "processing" && processingId && uploaded && (
         <div key="processing" className="screen-enter flex flex-1 flex-col">
           <ProcessingScreen
-            fileName={UPLOADED_FILE}
+            summaryId={processingId}
+            fileName={uploaded.filename}
             mode={mode}
-            onDone={() => setScreen("summary")}
+            onDone={finishProcessing}
+            onBack={() => {
+              void loadLibrary();
+              setScreen("home");
+            }}
           />
         </div>
       )}
-
       {screen === "summary" && activeDoc && (
         <div key="summary" className="screen-enter flex flex-1 flex-col">
           <SummaryScreen
             doc={activeDoc}
-            saved={savedIds.has(activeDoc.id)}
-            onToggleSave={toggleSave}
+            onDelete={deleteActive}
             onBack={() => setScreen(returnTo)}
           />
         </div>

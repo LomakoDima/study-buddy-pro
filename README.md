@@ -1,50 +1,140 @@
-# Study Buddy Pro
+# Summarize Telegram Mini App
 
-Create a DESIGN-ONLY prototype for a Telegram Mini App called Summarize — a personal study tool for students.
+Приложение превращает PDF, DOCX и PPTX лекции в краткие конспекты. Один деплой на Vercel содержит Vite-интерфейс, FastAPI и Telegram webhook. Локально используется SQLite, на Vercel — PostgreSQL.
 
-The main idea: users upload PDF, DOCX or PPTX lecture files and get short, structured study notes. For now, focus ONLY on the UI/UX prototype. Do not implement backend, AI, file parsing, database or real functionality.
+## Локальный запуск
 
-Design the main screens:
+Требования: Node.js 20+ и Python 3.11+.
 
-Home / recent summaries
+```powershell
+Copy-Item .env.example .env
+npm install
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r backend\requirements.txt
+```
 
-Upload new document
+В `.env` обязательно укажите `AI_API_KEY`. Для бота также укажите действительный `TELEGRAM_BOT_TOKEN`. Оставьте `DEV_MODE=true` только для локальной разработки.
 
-Choose summary mode: Quick, Study Notes, Exam Prep
+Терминал 1:
 
-Generated summary view
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+```
 
-Simple document/history library
+Терминал 2:
 
-Prioritize UX and clarity over visual decoration. The interface should feel extremely easy to understand and require as few actions as possible.
-
-Use a modern, premium visual style, but avoid the generic AI SaaS template look. Keep it clean and restrained. Use floating elements where they improve usability, subtle depth, modern cards, good spacing, polished typography and small micro-interactions.
-
-Do not overload the UI with gradients, huge hero sections, excessive glassmorphism or random decorative graphics.
-
-Since this is a Telegram Mini App, make the design mobile-first and compact. It should feel closer to a polished native productivity app than a traditional website.
-
-Use small relevant icons/illustrations only where they improve understanding.
-
-Overall feeling: simple, modern, premium, focused, student-friendly and practical.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/09658fd3-236a-42f6-a031-fbb65af21090).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+```powershell
 npm run dev
+```
+
+Откройте `http://localhost:8080`. Локально бот использует long polling, а библиотека хранится в `data/summarize.db`.
+
+## Деплой на Vercel
+
+### 1. Импорт проекта
+
+Загрузите репозиторий на GitHub/GitLab, в Vercel нажмите **Add New → Project → Import** и выберите репозиторий. Корневая папка проекта должна остаться `.`. Настройки из `vercel.json` уже задают:
+
+- Framework: Vite;
+- Build Command: `npm run build`;
+- Output Directory: `dist`;
+- Python Function: `api/index.py`;
+- максимальное время функции: 300 секунд.
+
+### 2. Подключение PostgreSQL
+
+До первого production-деплоя откройте у проекта **Storage → Browse Marketplace → Neon** (можно также Supabase/Postgres), создайте базу и подключите её к проекту. Backend автоматически распознаёт одну из переменных:
+
+- `DATABASE_URL`;
+- `POSTGRES_URL`;
+- `NEON_DATABASE_URL`.
+
+Без PostgreSQL production-функция намеренно не запускается: файловая система Vercel не подходит для постоянного SQLite-хранилища.
+
+### 3. Environment Variables
+
+В **Settings → Environment Variables** добавьте для Production:
+
+```ini
+AI_API_KEY=ваш_ключ_AI
+AI_MODEL=gpt-4.1-mini
+TELEGRAM_BOT_TOKEN=полный_токен_из_BotFather
+DEV_MODE=false
+MAX_FILE_MB=20
+AI_CHUNK_CHARS=14000
+TELEGRAM_WEBHOOK_SECRET=случайная_строка_1
+WEBHOOK_SETUP_SECRET=случайная_строка_2
+```
+
+Две независимые случайные строки можно создать так:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Не добавляйте `VITE_API_URL` в Vercel: frontend обращается к `/api` на том же домене. `AI_API_KEY`, токен бота, строки подключения и webhook-секреты никогда не должны иметь префикс `VITE_`.
+
+Новый Vercel-проект автоматически предоставляет `VERCEL_PROJECT_PRODUCTION_URL`. Backend использует его как адрес Mini App и webhook. Если вы используете собственный домен или системные переменные отключены, добавьте явно:
+
+```ini
+TELEGRAM_WEB_APP_URL=https://ваш-домен
+TELEGRAM_WEBHOOK_URL=https://ваш-домен/api/telegram/webhook
+```
+
+После добавления переменных нажмите **Deploy** или **Redeploy**.
+
+### 4. Проверка API
+
+Откройте:
+
+```text
+https://ваш-домен/api/health
+```
+
+Ожидаемый ответ содержит `"status":"ok"`, `"aiConfigured":true`, `"botConfigured":true` и `"database":"postgresql"`.
+
+### 5. Регистрация Telegram webhook
+
+После успешного деплоя выполните один раз, подставив production-домен и точное значение `WEBHOOK_SETUP_SECRET`:
+
+```powershell
+$setupSecret = "ваше_значение_WEBHOOK_SETUP_SECRET"
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "https://ваш-домен/api/telegram/setup" `
+  -Headers @{ "X-Webhook-Setup-Secret" = $setupSecret }
+```
+
+Ответ должен содержать `ok: true` и URL, заканчивающийся на `/api/telegram/webhook`. Повторите эту команду после смены токена, webhook-секрета или домена.
+
+### 6. Настройка Mini App в BotFather
+
+В Telegram откройте `@BotFather`:
+
+1. `/mybots` → выберите бота.
+2. **Bot Settings → Menu Button → Configure menu button**.
+3. Отправьте production URL вида `https://ваш-домен`.
+4. Укажите название кнопки, например `Open Summarize`.
+
+Затем отправьте боту `/start`. Кнопка откроет Mini App, а PDF/DOCX/PPTX можно отправлять прямо в чат — обе точки входа используют одну PostgreSQL-библиотеку.
+
+Production-домен должен быть публичным: Vercel Deployment Protection не должна блокировать запросы Telegram.
+
+## Ограничения Vercel
+
+- В браузере UI ограничивает файлы до 4 MB, потому что предел тела запроса Vercel Functions — 4.5 MB с учётом multipart-обвязки.
+- Отправка файлов боту использует Telegram API и может работать до `MAX_FILE_MB` (по умолчанию 20 MB).
+- Сканированные PDF без текстового слоя не поддерживаются: в MVP нет OCR.
+- Preview-деплои не перенастраивают production webhook автоматически.
+
+## Проверки
+
+```powershell
+npm run lint
+npm run build
+npx tsc --noEmit
+$env:PYTHONPATH="backend"
+python -m pytest backend\tests
 ```

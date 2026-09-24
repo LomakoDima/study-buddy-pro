@@ -12,14 +12,41 @@ const modeIconStyles: Record<Mode, string> = {
 interface Props {
   docs: SummaryDoc[];
   mode: Mode;
+  userName: string;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
   onOpenDoc: (d: SummaryDoc) => void;
   onUpload: () => void;
   onSelectMode: (m: Mode) => void;
   onLibrary: () => void;
 }
 
-export function HomeScreen({ docs, mode, onOpenDoc, onUpload, onSelectMode, onLibrary }: Props) {
-  const recent = docs.filter((d) => d.status !== "processing").slice(0, 3);
+export function HomeScreen({
+  docs,
+  mode,
+  userName,
+  loading,
+  error,
+  onRetry,
+  onOpenDoc,
+  onUpload,
+  onSelectMode,
+  onLibrary,
+}: Props) {
+  const recent = docs.filter((d) => !d.status).slice(0, 3);
+  const firstName = userName.trim().split(/\s+/)[0] || "Student";
+  const initials =
+    userName
+      .trim()
+      .split(/\s+/)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "S";
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(new Date());
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   return (
     <div className="flex flex-1 flex-col pb-28">
@@ -45,7 +72,7 @@ export function HomeScreen({ docs, mode, onOpenDoc, onUpload, onSelectMode, onLi
               <Search className="size-4" />
             </button>
             <div className="grid size-9 place-items-center rounded-full bg-sun text-xs font-extrabold text-foreground shadow-sm">
-              AM
+              {initials}
             </div>
           </div>
         </div>
@@ -63,11 +90,21 @@ export function HomeScreen({ docs, mode, onOpenDoc, onUpload, onSelectMode, onLi
       </header>
 
       <div className="px-5 pt-5">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Tuesday</p>
-        <h1 className="mt-1 font-display text-3xl font-bold leading-tight">Good morning, Ava</h1>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">{weekday}</p>
+        <h1 className="mt-1 font-display text-3xl font-bold leading-tight">
+          {greeting}, {firstName}
+        </h1>
         <p className="mt-1 text-sm text-foreground/55">
-          You've summarized {recent.length} lectures this week.
+          You have {docs.filter((doc) => !doc.status).length} summaries in your library.
         </p>
+        {error && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">
+            <span>{error}</span>
+            <button onClick={onRetry} className="shrink-0 underline">
+              Retry
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mt-5 px-5">
@@ -135,6 +172,11 @@ export function HomeScreen({ docs, mode, onOpenDoc, onUpload, onSelectMode, onLi
           </button>
         </div>
         <div className="mt-3 space-y-3">
+          {loading && (
+            <div className="rounded-3xl bg-card p-4 text-sm text-foreground/40 shadow-sm">
+              Loading your summaries…
+            </div>
+          )}
           {recent.map((d) => (
             <button
               key={d.id}
@@ -165,6 +207,11 @@ export function HomeScreen({ docs, mode, onOpenDoc, onUpload, onSelectMode, onLi
               </div>
             </button>
           ))}
+          {!loading && !error && recent.length === 0 && (
+            <div className="rounded-3xl bg-card p-5 text-center text-sm text-foreground/45 shadow-sm">
+              Your generated summaries will appear here.
+            </div>
+          )}
         </div>
       </div>
     </div>
