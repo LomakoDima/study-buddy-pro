@@ -39,8 +39,9 @@ class SummaryService:
         self.database.execute(
             """
             INSERT INTO documents
-            (id, user_id, filename, title, file_type, size_bytes, unit_count, extracted_text, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, user_id, filename, title, file_type, size_bytes, unit_count,
+             extracted_text, visual_assets, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
@@ -51,6 +52,7 @@ class SummaryService:
                 size_bytes,
                 parsed.unit_count,
                 parsed.text,
+                json.dumps([asset.to_dict() for asset in parsed.visuals], ensure_ascii=False),
                 created_at,
             ),
         )
@@ -61,6 +63,8 @@ class SummaryService:
             "fileType": parsed.file_type,
             "sizeBytes": size_bytes,
             "unitCount": parsed.unit_count,
+            "visualCount": len(parsed.visuals),
+            "tableCount": parsed.table_count,
             "createdAt": created_at,
         }
 
@@ -85,7 +89,7 @@ class SummaryService:
     async def generate_summary(self, summary_id: str) -> None:
         row = self.database.fetch_one(
             """
-            SELECT s.*, d.filename, d.extracted_text
+            SELECT s.*, d.filename, d.extracted_text, d.visual_assets
             FROM summaries s JOIN documents d ON d.id = s.document_id
             WHERE s.id = ?
             """,
@@ -101,8 +105,13 @@ class SummaryService:
             )
 
         try:
+            visuals = json.loads(row.get("visual_assets") or "[]")
             payload = await self.summarizer.summarize(
-                row["filename"], row["extracted_text"], row["mode"], progress
+                row["filename"],
+                row["extracted_text"],
+                row["mode"],
+                progress,
+                visuals=visuals,
             )
             self.database.execute(
                 """

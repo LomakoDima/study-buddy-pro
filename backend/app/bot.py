@@ -33,6 +33,13 @@ def _render_summary(summary: dict) -> str:
         for item in payload["qa"]:
             rendered.append(f"Q: {item['q']}\nA: {item['a']}")
         parts.append("\nLIKELY QUESTIONS\n" + "\n\n".join(rendered))
+    if payload.get("visuals"):
+        rendered_visuals = []
+        for item in payload["visuals"]:
+            rendered_visuals.append(
+                f"{item['source']} — {item['title']}\n{item['summary']}"
+            )
+        parts.append("\nVISUALS AND TABLES\n" + "\n\n".join(rendered_visuals))
     return "\n".join(parts)
 
 

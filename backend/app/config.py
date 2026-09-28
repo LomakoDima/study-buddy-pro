@@ -46,6 +46,9 @@ class Settings:
     webhook_setup_secret: str = os.getenv("WEBHOOK_SETUP_SECRET", "")
     ai_api_key: str = os.getenv("AI_API_KEY", "")
     ai_model: str = os.getenv("AI_MODEL", "gpt-4.1-mini")
+    ai_vision_model: str = os.getenv("AI_VISION_MODEL") or os.getenv(
+        "AI_MODEL", "gpt-4.1-mini"
+    )
     ai_base_url: str | None = os.getenv("AI_BASE_URL") or None
     max_file_mb: int = int(os.getenv("MAX_FILE_MB", "20"))
     max_chunk_chars: int = int(os.getenv("AI_CHUNK_CHARS", "14000"))

@@ -62,6 +62,7 @@ class Database:
                     size_bytes INTEGER NOT NULL,
                     unit_count INTEGER NOT NULL,
                     extracted_text TEXT NOT NULL,
+                    visual_assets TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL
                 );
 
@@ -88,6 +89,27 @@ class Database:
                         connection.execute(statement)
             else:
                 connection.executescript(schema)
+        self._ensure_column(
+            "documents",
+            "visual_assets",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        with self._connect() as connection:
+            if self.url:
+                connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}"
+                )
+                connection.commit()
+                return
+            exists = any(
+                row["name"] == column
+                for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+            )
+            if not exists:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                connection.commit()
 
     def execute(self, query: str, params: tuple[Any, ...] = ()) -> None:
         with self._lock, self._connect() as connection:

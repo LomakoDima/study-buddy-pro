@@ -9,6 +9,11 @@ export interface QA {
   q: string;
   a: string;
 }
+export interface VisualInsight {
+  source: string;
+  title: string;
+  summary: string;
+}
 
 export interface SummaryDoc {
   id: string;
@@ -27,6 +32,7 @@ export interface SummaryDoc {
   terms: string[];
   sections: SummarySection[];
   qa?: QA[];
+  visuals: VisualInsight[];
 }
 
 export interface UploadedDocument {
@@ -36,6 +42,8 @@ export interface UploadedDocument {
   fileType: FileType;
   sizeBytes: number;
   unitCount: number;
+  visualCount?: number;
+  tableCount?: number;
   createdAt: string;
 }
 
@@ -59,6 +67,7 @@ export interface ApiSummary {
     terms: string[];
     sections: SummarySection[];
     qa: QA[];
+    visuals?: VisualInsight[];
   } | null;
 }
 
@@ -123,6 +132,7 @@ export function toSummaryDoc(item: ApiSummary): SummaryDoc {
     terms: payload?.terms ?? [],
     sections: payload?.sections ?? [],
     qa: payload?.qa ?? [],
+    visuals: payload?.visuals ?? [],
     ...(item.status === "ready" ? {} : { status: item.status }),
     ...(item.error ? { error: item.error } : {}),
   };

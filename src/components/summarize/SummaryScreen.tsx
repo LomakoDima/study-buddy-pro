@@ -20,6 +20,12 @@ function SectionLabel({ children }: { children: string }) {
 function summaryText(doc: SummaryDoc): string {
   const parts = [doc.title, "", ...doc.keyPoints.map((point) => `• ${point}`)];
   for (const section of doc.sections) parts.push("", section.heading, section.text);
+  if (doc.visuals.length) {
+    parts.push("", "Visuals and tables");
+    for (const item of doc.visuals) {
+      parts.push(`${item.source} — ${item.title}`, item.summary);
+    }
+  }
   if (doc.qa?.length) for (const item of doc.qa) parts.push("", `Q: ${item.q}`, `A: ${item.a}`);
   return parts.join("\n");
 }
@@ -119,6 +125,27 @@ export function SummaryScreen({ doc, onDelete, onBack }: Props) {
                   <div key={`${item.q}-${index}`} className="rounded-2xl bg-card p-4 shadow-sm">
                     <p className="text-sm font-bold">{item.q}</p>
                     <p className="mt-1.5 text-sm leading-relaxed text-foreground/65">{item.a}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {doc.visuals.length > 0 && (
+            <div>
+              <SectionLabel>Visuals and tables</SectionLabel>
+              <div className="mt-2.5 space-y-2.5">
+                {doc.visuals.map((item, index) => (
+                  <div
+                    key={`${item.source}-${item.title}-${index}`}
+                    className="rounded-2xl bg-card p-4 shadow-sm"
+                  >
+                    <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-primary">
+                      {item.source}
+                    </p>
+                    <p className="mt-1 text-sm font-bold">{item.title}</p>
+                    <p className="mt-1.5 text-sm leading-relaxed text-foreground/65">
+                      {item.summary}
+                    </p>
                   </div>
                 ))}
               </div>
